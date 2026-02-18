@@ -1,0 +1,147 @@
+Go 문법 — 스프링 개발자용 번역표
+
+  1. 변수 선언
+
+  // Go
+  name := "hello"        // 타입 추론 (Java의 var name = "hello")
+  var name string        // 명시적 선언
+  // Java
+  var name = "hello";
+  String name;
+
+  ---
+  2. 구조체 = 클래스
+
+  // Go - 구조체 (필드만 있는 클래스)
+  type FileInfo struct {
+      Name    string `json:"name"`   // `json:"name"` = @JsonProperty("name")
+      Size    int64  `json:"size"`
+      Project string `json:"project"`
+  }
+  // Java
+  public class FileInfo {
+      @JsonProperty("name")
+      private String name;
+      @JsonProperty("size")
+      private long size;
+      @JsonProperty("project")
+      private String project;
+  }
+
+  ---
+  3. 인터페이스
+
+  // Go
+  type Storage interface {
+      Save(project string, data io.Reader) (FileInfo, error)
+      Delete(project, filename string) error
+  }
+  // Java
+  public interface Storage {
+      FileInfo save(String project, InputStream data) throws Exception;
+      void delete(String project, String filename) throws Exception;
+  }
+  핵심 차이: Go는 implements 키워드 없음. Storage 인터페이스의 메서드를 전부 구현하면 자동으로 구현체가 됨.
+
+  ---
+  4. 메서드 (리시버)
+
+  // Go - (h *UploadHandler) 가 this/self 역할
+  func (h *UploadHandler) Upload(c *gin.Context) {
+      project := c.Param("project")
+  }
+  // Java
+  @RestController
+  public class UploadHandler {
+      public void upload(@PathVariable String project) { }
+  }
+
+  ---
+  5. 에러 처리 — Go의 가장 큰 차이점
+
+  // Go - 예외 없음, 에러를 값으로 반환
+  file, err := os.Open("path")
+  if err != nil {          // null 체크처럼 에러 체크
+      return err           // 에러면 즉시 반환
+  }
+  // 여기까지 오면 file은 정상
+  // Java
+  try {
+      File file = new File("path");
+  } catch (Exception e) {
+      throw e;
+  }
+  Go는 try-catch 없음. 함수가 에러를 같이 반환하고, 호출자가 직접 체크함.
+
+  ---
+  6. 포인터 (*, &)
+
+  store := storage.NewLocalStorage(...)   // store = 객체
+
+  uploadHandler := &handler.UploadHandler{Storage: store}
+  //               ↑ & = 이 객체의 주소(참조)를 넘김
+  // Java는 객체가 항상 참조 타입이라 & 같은 게 필요 없음
+  UploadHandler uploadHandler = new UploadHandler(store);
+  이 프로젝트에서 &는 그냥 "new 키워드" 라고 생각하면 됨.
+
+  ---
+  7. 구조체 초기화 = 생성자
+
+  // Go
+  uploadHandler := &handler.UploadHandler{
+      Storage: store,   // 필드명: 값
+  }
+  // Java
+  UploadHandler uploadHandler = new UploadHandler();
+  uploadHandler.setStorage(store);
+  // 또는 생성자
+  UploadHandler uploadHandler = new UploadHandler(store);
+
+  ---
+  8. 함수가 여러 값 반환
+
+  // Go - (결과값, 에러) 동시 반환
+  func (s *LocalStorage) Save(...) (FileInfo, error) {
+      return FileInfo{...}, nil   // nil = 에러 없음
+  }
+
+  // 호출
+  info, err := store.Save(...)
+  // Java - 예외로 에러 처리, 반환값은 하나
+  FileInfo info = store.save(...);  // 에러는 throws로
+
+  ---
+  9. 패키지 = 폴더
+
+  package handler   // 이 파일은 handler 패키지
+
+  import (
+      "go-img-server/internal/storage"   // storage 패키지 가져오기
+      "github.com/gin-gonic/gin"         // 외부 라이브러리
+  )
+  package com.mycompany.handler;
+
+  import com.mycompany.storage.Storage;
+  import org.springframework.web.bind.annotation.*;
+
+  ---
+  10. main.go 전체 흐름 읽기
+
+  func main() {
+      cfg := config.Load()               // ① 설정 로드 (application.properties)
+
+      store := storage.NewLocalStorage(  // ② Bean 생성
+          cfg.UploadDir, cfg.BaseURL)
+
+      uploadHandler := &handler.UploadHandler{Storage: store}  // ③ 의존성 주입
+
+      r := gin.Default()                 // ④ DispatcherServlet 생성
+
+      api := r.Group("/api/v1")          // ⑤ @RequestMapping("/api/v1")
+      api.Use(middleware.APIKeyAuth(...)) // ⑥ Filter 등록
+
+      projects := api.Group("/projects/:project")
+      projects.POST("/images", uploadHandler.Upload)   // ⑦ @PostMapping
+
+      r.Run(":8080")                     // ⑧ 서버 시작 (Tomcat.start())
+  }
